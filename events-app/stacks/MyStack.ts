@@ -1,4 +1,4 @@
-import { StackContext, Api, EventBus, Function } from "sst/constructs";
+import { StackContext, Api, EventBus, Function, Queue } from "sst/constructs";
 import * as events from "aws-cdk-lib/aws-events";
 
 export function API({ stack }: StackContext) {
@@ -36,6 +36,19 @@ export function API({ stack }: StackContext) {
     "ImportedBus",
     "tamas-loyalty-LoyaltyBus"
   );
+
+  const queue = new Queue(stack, "queue", {
+    consumer: {
+      function:  "packages/functions/src/queues/consumer.main",
+      cdk: {
+        eventSource: {
+          batchSize: 5,
+          maxConcurrency: 18,
+          reportBatchItemFailures: true,
+        }
+    },
+  }});
+
   new EventBus(stack, "TamasBus", {
     cdk: {
       eventBus: tamasBus,
@@ -63,8 +76,19 @@ export function API({ stack }: StackContext) {
           }),
         },
       },
+      helloWorldReceivedRule: {
+        pattern: { source: ["dotnetHelloWorldApp"], detailType: ["HelloWorld"] },
+        targets: {
+          consumer: new Function(stack, "consumer", {
+            handler: "packages/functions/src/queues/consumer.main",
+          }),
+        },
+      },
     },
   });
+
+
+
   stack.addOutputs({
     ApiEndpoint: api.url,
   });

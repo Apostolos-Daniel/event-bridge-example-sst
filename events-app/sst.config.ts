@@ -4,7 +4,7 @@ import { API } from "./stacks/MyStack";
 export default {
   config(_input) {
     return {
-      name: "event-bridge-example-sst-app",
+      name: "events-app",
       region: "eu-west-1",
     };
   },

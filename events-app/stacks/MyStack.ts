@@ -2,6 +2,7 @@ import { StackContext, Api, EventBus, Function } from "sst/constructs";
 import * as events from "aws-cdk-lib/aws-events";
 
 export function API({ stack }: StackContext) {
+  stack.tags.setTag("AppManagerCFNStackKey", stack.stage.toLowerCase());
   const bus = new EventBus(stack, "bus", {
     defaults: {
       retries: 10,
@@ -9,12 +10,6 @@ export function API({ stack }: StackContext) {
     rules: {
       helloWorldRule: {
         pattern: { source: ["todoapp"], detailType: ["todo.created"] },
-        // targets: {
-        //   helloWorld:
-        //   new Function(stack, "todoCreated", {
-        //   handler: "packages/functions/src/events/todo-created.main",
-        // })
-        // },
       },
     },
   });
@@ -41,7 +36,7 @@ export function API({ stack }: StackContext) {
     "ImportedBus",
     "tamas-loyalty-LoyaltyBus"
   );
-  const importedBus = new EventBus(stack, "TamasBus", {
+  new EventBus(stack, "TamasBus", {
     cdk: {
       eventBus: tamasBus,
     },
@@ -56,7 +51,7 @@ export function API({ stack }: StackContext) {
         },
         targets: {
           helloWorld: new Function(stack, "helloWorld", {
-            handler: "packages/functions/src/events/dotnet-hello-world.main",
+            handler: "packages/functions/src/events/hello-world.main",
           }),
         },
       },
@@ -70,7 +65,6 @@ export function API({ stack }: StackContext) {
       },
     },
   });
-
   stack.addOutputs({
     ApiEndpoint: api.url,
   });

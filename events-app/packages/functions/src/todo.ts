@@ -1,5 +1,5 @@
 import { ApiHandler } from "sst/node/api";
-import { Todo } from "@event-bridge-example-sst-app/core/todo";
+import { Todo } from "@events-app/core/todo";
 
 export const create = ApiHandler(async (_evt) => {
   await Todo.create();

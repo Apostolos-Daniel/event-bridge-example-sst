@@ -1,63 +1,58 @@
-import { StackContext, Api, EventBus, Function, Queue } from "sst/constructs";
+import {
+  StackContext,
+  Api,
+  EventBus,
+  Function,
+  Queue,
+  Config,
+  Table,
+} from "sst/constructs";  
 import * as events from "aws-cdk-lib/aws-events";
 
 export function API({ stack }: StackContext) {
   stack.tags.setTag("AppManagerCFNStackKey", stack.stage.toLowerCase());
-  const bus = new EventBus(stack, "bus", {
-    defaults: {
-      retries: 10,
-    },
-    rules: {
-      helloWorldRule: {
-        pattern: { source: ["todoapp"], detailType: ["todo.created"] },
-      },
-    },
-  });
 
-  const api = new Api(stack, "api", {
-    defaults: {
-      function: {
-        bind: [bus],
-      },
-    },
-    routes: {
-      "GET /": "packages/functions/src/lambda.handler",
-      "GET /todo": "packages/functions/src/todo.list",
-      "POST /todo": "packages/functions/src/todo.create",
-    },
-  });
-
-  bus.subscribe("todo.created", {
-    handler: "packages/functions/src/events/todo-created.handler",
-  });
-
-  const tamasBus = events.EventBus.fromEventBusName(
+  const SERVICEBUS_CONNECTION_STRING = new Config.Secret(
     stack,
-    "ImportedBus",
-    "tamas-loyalty-LoyaltyBus"
+    "SERVICEBUS_CONNECTION_STRING"
   );
 
-  const queue = new Queue(stack, "queue", {
+  const eventsTable = new Table(stack, "EventsTable", {
+       fields: {
+         pk: "string",
+         sk: "string",
+       },
+    primaryIndex: { partitionKey: "pk", sortKey: "sk"},
+  });
+
+  const importedTamasBus = events.EventBus.fromEventBusName(
+    stack,
+    "ImportedBus",
+    "tamas-loyalty-LoyaltyEventBus"
+  );
+
+  new Queue(stack, "queue", {
     consumer: {
-      function:  "packages/functions/src/queues/consumer.main",
+      function: "packages/functions/src/queues/consumer.main",
       cdk: {
         eventSource: {
           batchSize: 5,
           maxConcurrency: 18,
           reportBatchItemFailures: true,
-        }
+        },
+      },
     },
-  }});
+  });
 
-  new EventBus(stack, "TamasBus", {
+  const tamasEventBus = new EventBus(stack, "TamasBus", {
     cdk: {
-      eventBus: tamasBus,
+      eventBus: importedTamasBus,
     },
     defaults: {
       retries: 10,
     },
     rules: {
-      helloWorldRule: {
+      helloWorld: {
         pattern: {
           source: ["dotnetHelloWorldApp"],
           detailType: ["HelloWorld"],
@@ -66,28 +61,47 @@ export function API({ stack }: StackContext) {
           helloWorld: new Function(stack, "helloWorld", {
             handler: "packages/functions/src/events/hello-world.main",
           }),
-        },
-      },
-      storeUpdated: {
-        pattern: { source: ["zeus"] },
-        targets: {
-          zeus: new Function(stack, "zeus", {
-            handler: "packages/functions/src/events/zeus.main",
+          consumer: new Function(stack, "consumer", {
+            handler: "packages/functions/src/queues/consumer.main",
           }),
         },
       },
-      helloWorldReceivedRule: {
-        pattern: { source: ["dotnetHelloWorldApp"], detailType: ["HelloWorld"] },
+      // storeUpdated: {
+      //   pattern: { source: ["zeus"] },
+      //   targets: {
+      //     zeus: new Function(stack, "zeus", {
+      //       handler: "packages/functions/src/events/zeus.main",
+      //     }),
+      //   },
+      // },
+      loyalty360: {
+        pattern: {
+          source: ["events-app"],
+          detailType: ["order.placed"],
+        },
         targets: {
-          consumer: new Function(stack, "consumer", {
-            handler: "packages/functions/src/queues/consumer.main",
+          loyalty360: new Function(stack, "loyalty360", {
+            handler: "packages/functions/src/events/loyalty-360.main",
+            bind: [SERVICEBUS_CONNECTION_STRING],
           }),
         },
       },
     },
   });
 
-
+  const api = new Api(stack, "api", {
+    defaults: {
+      function: {
+        bind: [tamasEventBus, eventsTable, SERVICEBUS_CONNECTION_STRING],
+      },
+    },
+    routes: {
+      "GET /": "packages/functions/src/lambda.handler",
+      "GET /order/{order_id}": "packages/functions/src/order.status",
+      "POST /order": "packages/functions/src/order.create",
+      "POST /order-refunds": "packages/functions/src/order.refund",
+    },
+  });
 
   stack.addOutputs({
     ApiEndpoint: api.url,
